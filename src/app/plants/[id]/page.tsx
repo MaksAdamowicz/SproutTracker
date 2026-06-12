@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, use } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import { useParams, useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 
 interface Plant {
   id: string;
@@ -14,10 +15,20 @@ interface Plant {
   created_at: string;
 }
 
-export default function PlantDetail() {
-  const params = useParams();
+interface GrowthLog {
+  id: string;
+  activity_type: string;
+  measurement_cm: number | null;
+  notes: string;
+  image_url: string | null;
+  created_at: string;
+}
+
+export default function PlantDetail({ params }: { params: Promise<{ id: string }> }) {
+  const resolvedParams = use(params);
   const router = useRouter();
   const [plant, setPlant] = useState<Plant | null>(null);
+  const [logs, setLogs] = useState<GrowthLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
@@ -28,28 +39,40 @@ export default function PlantDetail() {
   const [editStatus, setEditStatus] = useState('');
 
   useEffect(() => {
-    const fetchPlant = async () => {
-      if (params?.id) {
-        const { data, error } = await supabase
+    const fetchPlantAndLogs = async () => {
+      if (resolvedParams?.id) {
+        // Fetch plant
+        const { data: plantData, error: plantError } = await supabase
           .from('plants')
           .select('*')
-          .eq('id', params.id)
+          .eq('id', resolvedParams.id)
           .single();
 
-        if (error) {
+        if (plantError) {
           setError('Failed to load plant.');
-        } else if (data) {
-          setPlant(data);
-          setEditName(data.name);
-          setEditSpecies(data.species || '');
-          setEditStatus(data.status);
+        } else if (plantData) {
+          setPlant(plantData);
+          setEditName(plantData.name);
+          setEditSpecies(plantData.species || '');
+          setEditStatus(plantData.status);
+          
+          // Fetch logs
+          const { data: logsData } = await supabase
+            .from('growth_logs')
+            .select('*')
+            .eq('plant_id', resolvedParams.id)
+            .order('created_at', { ascending: false });
+            
+          if (logsData) {
+            setLogs(logsData);
+          }
         }
       }
       setLoading(false);
     };
 
-    fetchPlant();
-  }, [params]);
+    fetchPlantAndLogs();
+  }, [resolvedParams]);
 
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -84,20 +107,39 @@ export default function PlantDetail() {
     }
   };
 
+  const getActivityIcon = (type: string) => {
+    switch (type) {
+      case 'water': return '💧';
+      case 'fertilize': return '🧪';
+      case 'measure': return '📏';
+      case 'note': return '📝';
+      default: return '📌';
+    }
+  };
+
   if (loading) return <div className="p-8 text-center">Loading plant details...</div>;
   if (error || !plant) return <div className="p-8 text-center text-red-500">{error || 'Plant not found'}</div>;
 
   return (
     <div className="max-w-4xl mx-auto p-4 sm:p-6 lg:p-8">
-      <div className="mb-6">
-        <Link href="/plants" className="text-green-600 hover:text-green-500 font-medium text-sm">
+      <div className="mb-6 flex justify-between items-center">
+        <Link href="/plants" className="text-green-600 hover:text-green-500 font-medium text-sm flex items-center">
           &larr; Back to Garden
+        </Link>
+        <Link 
+          href={`/plants/${plant.id}/log`}
+          className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors shadow-sm"
+        >
+          + Log Activity
         </Link>
       </div>
 
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden">
-        <div className="h-48 bg-green-200 dark:bg-green-900 flex items-center justify-center">
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden mb-8">
+        <div className="h-48 bg-green-200 dark:bg-green-900 flex items-center justify-center relative">
           <span className="text-6xl">🌿</span>
+          <div className="absolute bottom-4 right-4 bg-white/80 dark:bg-gray-900/80 px-3 py-1 rounded-full text-xs font-semibold backdrop-blur-sm capitalize shadow-sm">
+            {plant.status}
+          </div>
         </div>
         
         <div className="p-6 sm:p-8">
@@ -159,22 +201,62 @@ export default function PlantDetail() {
                 </div>
               </div>
 
-              <div className="mt-6 grid grid-cols-2 gap-4">
-                <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-lg">
-                  <div className="text-sm text-gray-500 dark:text-gray-400">Status</div>
-                  <div className="text-lg font-medium text-gray-900 dark:text-white capitalize">{plant.status}</div>
-                </div>
-                <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-lg">
-                  <div className="text-sm text-gray-500 dark:text-gray-400">Date Planted</div>
-                  <div className="text-lg font-medium text-gray-900 dark:text-white">
-                    {plant.date_planted ? new Date(plant.date_planted).toLocaleDateString() : 'N/A'}
-                  </div>
+              <div className="mt-6">
+                <div className="text-sm text-gray-500 dark:text-gray-400">Date Planted</div>
+                <div className="text-lg font-medium text-gray-900 dark:text-white">
+                  {plant.date_planted ? new Date(plant.date_planted).toLocaleDateString() : 'N/A'}
                 </div>
               </div>
             </div>
           )}
         </div>
       </div>
+
+      {/* Activity Timeline */}
+      <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">Activity History</h2>
+      
+      {logs.length === 0 ? (
+        <div className="text-center py-8 bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 border-dashed">
+          <p className="text-gray-500 dark:text-gray-400 mb-2">No activity logged yet.</p>
+          <Link href={`/plants/${plant.id}/log`} className="text-green-600 hover:text-green-500 font-medium">
+            Log your first activity
+          </Link>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {logs.map((log) => (
+            <div key={log.id} className="bg-white dark:bg-gray-800 p-5 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row gap-5">
+              <div className="flex-shrink-0 flex items-center justify-center w-12 h-12 bg-green-100 dark:bg-green-900/30 text-2xl rounded-full">
+                {getActivityIcon(log.activity_type)}
+              </div>
+              <div className="flex-1">
+                <div className="flex justify-between items-baseline mb-1">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white capitalize">
+                    {log.activity_type}
+                    {log.activity_type === 'measure' && log.measurement_cm && ` (${log.measurement_cm} cm)`}
+                  </h3>
+                  <span className="text-sm text-gray-500 dark:text-gray-400">
+                    {new Date(log.created_at).toLocaleDateString()}
+                  </span>
+                </div>
+                {log.notes && (
+                  <p className="text-gray-700 dark:text-gray-300 mt-2">{log.notes}</p>
+                )}
+                {log.image_url && (
+                  <div className="mt-4 relative h-48 w-full sm:w-64 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+                    <Image 
+                      src={log.image_url} 
+                      alt="Progress" 
+                      fill
+                      className="object-cover"
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
