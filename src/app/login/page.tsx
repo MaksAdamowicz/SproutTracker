@@ -17,16 +17,21 @@ export default function Login() {
     setLoading(true);
     setError(null);
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-    if (error) {
-      setError(error.message);
+      if (error) {
+        setError(error.message);
+        setLoading(false);
+      } else {
+        router.push('/');
+      }
+    } catch (err: any) {
+      setError(err.message || "A network error occurred. Check your database connection.");
       setLoading(false);
-    } else {
-      router.push('/');
     }
   };
 

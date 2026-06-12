@@ -18,21 +18,26 @@ export default function SignUp() {
     setLoading(true);
     setError(null);
 
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-    });
+    try {
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+      });
 
-    if (error) {
-      setError(error.message);
+      if (error) {
+        setError(error.message);
+        setLoading(false);
+      } else {
+        setSuccess(true);
+        setLoading(false);
+        // Wait a bit and redirect to profile setup
+        setTimeout(() => {
+          router.push('/profile/setup');
+        }, 2000);
+      }
+    } catch (err: any) {
+      setError(err.message || "A network error occurred. Check your database connection.");
       setLoading(false);
-    } else {
-      setSuccess(true);
-      setLoading(false);
-      // Wait a bit and redirect to profile setup
-      setTimeout(() => {
-        router.push('/profile/setup');
-      }, 2000);
     }
   };
 
