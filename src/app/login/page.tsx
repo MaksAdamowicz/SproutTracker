@@ -17,6 +17,13 @@ export default function Login() {
     setLoading(true);
     setError(null);
 
+    // Prevent network crash if dummy URL is used
+    if (process.env.NEXT_PUBLIC_SUPABASE_URL?.includes('placeholder.supabase.co')) {
+      setError("Demo Mode: Please configure a real Supabase project in .env.local to sign in.");
+      setLoading(false);
+      return;
+    }
+
     try {
       const { error } = await supabase.auth.signInWithPassword({
         email,
