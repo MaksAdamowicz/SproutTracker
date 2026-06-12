@@ -18,6 +18,8 @@ interface FeedLog {
   user_id: string;
   username: string;
   user_avatar: string | null;
+  leaves_count: number;
+  viewer_has_leafed: boolean;
 }
 
 export default function Feed() {
@@ -77,6 +79,37 @@ export default function Feed() {
     const nextPage = page + 1;
     setPage(nextPage);
     fetchFeed(session.user.id, nextPage);
+  };
+
+  const handleToggleLeaf = async (logId: string, currentlyLeafed: boolean) => {
+    if (!session) return;
+    
+    // Optimistic update
+    setLogs(prevLogs => prevLogs.map(log => {
+      if (log.log_id === logId) {
+        return {
+          ...log,
+          viewer_has_leafed: !currentlyLeafed,
+          leaves_count: currentlyLeafed ? log.leaves_count - 1 : log.leaves_count + 1
+        };
+      }
+      return log;
+    }));
+
+    if (currentlyLeafed) {
+      await supabase
+        .from('leaves')
+        .delete()
+        .eq('log_id', logId)
+        .eq('user_id', session.user.id);
+    } else {
+      await supabase
+        .from('leaves')
+        .insert([{
+          log_id: logId,
+          user_id: session.user.id
+        }]);
+    }
   };
 
   const getActivityIcon = (type: string) => {
@@ -185,14 +218,28 @@ export default function Feed() {
                     />
                   </div>
                 )}
+                
+                {log.leaves_count > 0 && (
+                  <div className="mt-4 text-sm text-gray-500 dark:text-gray-400 flex items-center">
+                    <span className="mr-2">🍃</span>
+                    {log.leaves_count} {log.leaves_count === 1 ? 'Leaf' : 'Leaves'}
+                  </div>
+                )}
               </div>
               
-              {/* Future: Leaves and Comments section will go here */}
               <div className="px-4 py-3 sm:px-6 bg-gray-50 dark:bg-gray-800/50 border-t border-gray-100 dark:border-gray-700 flex space-x-4">
-                <button className="text-gray-500 hover:text-green-600 font-medium text-sm flex items-center space-x-1">
-                  <span className="text-lg">🍃</span> <span>Leaf</span>
+                <button 
+                  onClick={() => handleToggleLeaf(log.log_id, log.viewer_has_leafed)}
+                  className={`font-medium text-sm flex items-center space-x-1 transition-colors ${
+                    log.viewer_has_leafed 
+                      ? 'text-green-600 dark:text-green-500' 
+                      : 'text-gray-500 hover:text-green-600 dark:text-gray-400 dark:hover:text-green-500'
+                  }`}
+                >
+                  <span className="text-lg">🍃</span> 
+                  <span>{log.viewer_has_leafed ? 'Leafed' : 'Give Leaf'}</span>
                 </button>
-                <button className="text-gray-500 hover:text-green-600 font-medium text-sm flex items-center space-x-1">
+                <button className="text-gray-500 hover:text-green-600 dark:text-gray-400 dark:hover:text-green-500 font-medium text-sm flex items-center space-x-1 transition-colors">
                   <span className="text-lg">💬</span> <span>Comment</span>
                 </button>
               </div>
